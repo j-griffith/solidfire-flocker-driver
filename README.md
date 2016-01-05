@@ -20,9 +20,10 @@ Each of the following packages needs to be installed on EVERY Flocker Node
   sud yum in stall iscsi-initiator-utils
   ```
 
-- SolidFire Flocker Plugin
+- SolidFire Flocker Plugin (NOTE: Be sure to use flockers installed pip)
+
   ```
-  pip install solidfire-flocker-driver
+  /opt/flockder/bin/pip install solidfire-flocker-driver
   ```
    * or<br>
 
@@ -66,7 +67,7 @@ dataset:
 
 ```
 
-Note the format of the endpoint is https://<login>:<password>@<mvip>/json-rpc/<element-version>
+Note the format of the endpoint is https://\<login\>:\<password\>@\<mvip\>/json-rpc/\<element-version\>
 
 Profiles are used to set desired QoS of Volumes via Flockers Storage Profiles.  Modify the IOP
 values as desired, however the key names are required.
@@ -76,6 +77,9 @@ that you create a specific Voume Access Group on the SolidFire Cluster for Flock
 the initiator IQN of each Flocker Node to the VAG prior to attempting to provision Volumes with
 Flocker. The vag_id setting show above would be the SolidFire ID of the Flocker VAG that you
 create.
+
+After installing the plugin and setting up your configuration file you're now
+ready to restart the flocker agent service.
 
 Licensing
 ---------
