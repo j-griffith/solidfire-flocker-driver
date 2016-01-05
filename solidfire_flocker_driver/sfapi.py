@@ -60,22 +60,20 @@ class SolidFireClient(object):
                         'xMaxClonesPerNodeExceeded',
                         'xNotReadyForIO']
 
-    def __init__(self, *args, **kwargs):
-        self.endpoint_dict = kwargs.get('endpoint_dict')
+    def __init__(self, endpoint_dict, **kwargs):
+        self.endpoint_dict = endpoint_dict
         self.endpoint_version = kwargs.get('endpoint_version', '7.0')
         self.request_history = []
 
     @retry(retry_exc_tuple, tries=5)
-    def issue_request(self, method, params, version='1.0', endpoint=None):
+    def issue_request(self, method, params, version='1.0'):
         if params is None:
             params = {}
 
         # NOTE(jdg): We allow passing in a new endpoint to issue_api_req
         # to enable some of the multi-cluster features like replication etc
-        if endpoint is None:
-            endpoint_dict = self.endpoint_dict
         payload = {'method': method, 'params': params}
-        url = '%s/json-rpc/%s/' % (endpoint_dict['url'], self.endpoint_version)
+        url = '%s/json-rpc/%s/' % (self.endpoint_dict['url'], self.endpoint_version)
         LOG.debug('Issue SolidFire API call: %s' % json.dumps(payload))
 
         start_time = time.time()
@@ -83,8 +81,8 @@ class SolidFireClient(object):
             warnings.simplefilter("ignore", exceptions.InsecureRequestWarning)
             req = requests.post(url,
                                 data=json.dumps(payload),
-                                auth=(endpoint_dict['login'],
-                                      endpoint_dict['password']),
+                                auth=(self.endpoint_dict['login'],
+                                      self.endpoint_dict['password']),
                                 verify=False,
                                 timeout=30)
 

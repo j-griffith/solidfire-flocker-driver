@@ -2,7 +2,9 @@ import ast
 import socket
 import subprocess
 import shlex
+import uuid
 
+import bitmath
 from eliot import Logger
 from eliot import Message
 from eliot import startTask
@@ -16,6 +18,7 @@ from flocker.node.agents.blockdevice import (
 from solidfire_flocker_driver import sfapi
 from solidfire_flocker_driver import utils
 
+ALLOCATION_UNIT = bitmath.GiB(1).bytes
 logger = Logger()
 
 
@@ -25,19 +28,17 @@ def initialize_driver(cluster_id, **kwargs):
     :param kwargs['endpoint', 'vag_name', 'account_name']
     :return: SolidFireBolockDeviceAPI object
     """
-    endpoint = kwargs.get('endpoint', None)
-    return SolidFireBlockDeviceAPI(endpoint, cluster_id, **kwargs)
+    return SolidFireBlockDeviceAPI(str(cluster_id), **kwargs)
 
 
 @implementer(IBlockDeviceAPI)
 @implementer(IProfiledBlockDeviceAPI)
 class SolidFireBlockDeviceAPI(object):
     """ BlockDevice flocker implemenation using SolidFire."""
-    def __init__(self, endpoint, cluster_id, **kwargs):
+    def __init__(self, cluster_id, **kwargs):
         """
-        :param endpoint
-            https://<login>:<password>@<mvip>:<port>/json-rpc/<version>
         :param cluster_id
+        :kwargs endpoint
 
         Optional kwargs:
         : kwarg initiator_name
@@ -49,12 +50,14 @@ class SolidFireBlockDeviceAPI(object):
         self.initiator_iqns = []
         self.vagname = cluster_id
         self.account_name = cluster_id
+        endpoint = kwargs.get('endpoint', None)
         if not endpoint:
             raise Exception("Missing endpoint config parameters, unable "
                             "to initialize SolidFire Plugin.")
         self.endpoint_dict = self._build_endpoint_dict(endpoint)
+        self.client = sfapi.SolidFireClient(self.endpoint_dict)
         self.account_id = self._init_solidfire_account(self.account_name)
-        self.client = sfapi.SoidFireAPI(self.endpoint)
+        self.volume_prefix = kwargs.get('volume_prefix', '')
 
         if kwargs.get('initiator_name', None):
             self.initiator_iqns.append(kwargs.get('initiator_name'))
@@ -67,6 +70,19 @@ class SolidFireBlockDeviceAPI(object):
 
         self.vag_id = self._initialize_vag(self.vagname, self.initiator_iqns)
         self.profiles = self._set_profiles(kwargs.get('profiles', None))
+
+    def _init_solidfire_account(self, account_name):
+        try:
+
+            acct_id = self.client.issue_request(
+                'GetAccountByName',
+                {'username': self.account_name})['account']['accountID']
+        except sfapi.SolidFireRequestException:
+            params = {'username': account_name,
+                      'attributes': {}}
+            acct_id = self.client.issue_request('AddAccount',
+                                                params)['accountID']
+        return acct_id
 
     def _build_endpoint_dict(self, endpoint_string):
         port = 443
@@ -86,21 +102,21 @@ class SolidFireBlockDeviceAPI(object):
                 'port': port,
                 'url': 'https://%s:%s' % (mvip, port)}
 
-    def _self_get_svip(self):
+    def _get_svip(self):
         cluster_info = self.client.issue_request('GetClusterInfo', {})
         return cluster_info['clusterInfo']['svip'] + ':3260'
 
-    def _intialize_vag(self, vag_name, iqns):
+    def _initialize_vag(self, vag_name, iqns):
         # Get the vag and make sure this initiators iqn(s) are present
         vag_id = None
         vag = None
 
         vags = self.client.issue_request(
-            'ListVolumeAccessGropus',
+            'ListVolumeAccessGroups',
             {},
             version='7.0')['volumeAccessGroups']
         for v in vags:
-            if v['Name'] == vag_name:
+            if v['name'] == vag_name:
                 vag = v
                 vag_id = v['volumeAccessGroupID']
 
@@ -186,6 +202,14 @@ class SolidFireBlockDeviceAPI(object):
                 current_sessions.append(session)
         return current_sessions
 
+    def allocation_unit(self):
+        """Gets the minimum allocation unit for our backend.
+
+        The Storage Center recommended minimum is 1 GiB.
+        :returns: 1 GiB in bytes.
+        """
+        return ALLOCATION_UNIT
+
     def compute_instance_id(self):
         return unicode(socket.gethostbyname(socket.getfqdn()))
 
@@ -247,7 +271,7 @@ class SolidFireBlockDeviceAPI(object):
                 blockdevice_id=unicode(result['volumeID']),
                 size=size,
                 attached_to=None,
-                dataset_id=dataset_id)
+                dataset_id=uuid.UUID(dataset_id))
 
     def destroy_volume(self, blockdevice_id):
         """ Destroy an existing volume.
@@ -259,7 +283,7 @@ class SolidFireBlockDeviceAPI(object):
         """
         params = {'volumeID': int(blockdevice_id)}
         try:
-            self._issue_api_request('DeleteVolume', params)
+            self.client.issue_request('DeleteVolume', params)
         except sfapi.SolidFireRequestException as ex:
             if 'xVolumeIDDoesNotExist' in ex.msg:
                 raise UnknownVolume(blockdevice_id)
@@ -268,7 +292,7 @@ class SolidFireBlockDeviceAPI(object):
         return
 
     def get_device_path(self, blockdevice_id):
-        vol = self._get_solidfire_volume(self, blockdevice_id)
+        vol = self._get_solidfire_volume(blockdevice_id)
         if not vol:
             raise UnknownVolume(blockdevice_id)
 
@@ -288,7 +312,7 @@ class SolidFireBlockDeviceAPI(object):
             ``host``.
         """
 
-        vol = self._get_solidfire_volume(self, blockdevice_id)
+        vol = self._get_solidfire_volume(blockdevice_id)
         if not vol:
             raise UnknownVolume(blockdevice_id)
 
@@ -312,7 +336,7 @@ class SolidFireBlockDeviceAPI(object):
                 blockdevice_id=unicode(blockdevice_id),
                 size=vol['totalSize'],
                 attached_to=attach_to,
-                dataset_id=blockdevice_id)
+                dataset_id=uuid.UUID(str(vol['name'])))
         raise Exception("Failed iSCSI login to device: %s" % blockdevice_id)
 
     def detach_volume(self, blockdevice_id):
@@ -327,7 +351,7 @@ class SolidFireBlockDeviceAPI(object):
             not attached to anything.
         :returns: ``None``
         """
-        vol = self._get_solidfire_volume(self, blockdevice_id)
+        vol = self._get_solidfire_volume(blockdevice_id)
         if not vol:
             raise UnknownVolume(blockdevice_id)
 
@@ -352,7 +376,7 @@ class SolidFireBlockDeviceAPI(object):
 
         :returns: ``None``
         """
-        vol = self._get_solidfire_volume(self, blockdevice_id)
+        vol = self._get_solidfire_volume(blockdevice_id)
         if not vol:
             raise UnknownVolume(blockdevice_id)
 
@@ -361,8 +385,8 @@ class SolidFireBlockDeviceAPI(object):
 
         params = {'volumeID': vol['volumeID'],
                   'totalSize': int(size)}
-        self._issue_api_request('ModifyVolume',
-                                params, version='5.0')
+        self.client.issue_request('ModifyVolume',
+                                  params, version='5.0')
 
     def list_volumes(self):
         """ List all the block devices available via the back end API.
@@ -383,5 +407,5 @@ class SolidFireBlockDeviceAPI(object):
                            blockdevice_id=unicode(v['volumeID']),
                            size=v['totalSize'],
                            attached_to=attached_to,
-                           dataset_id=v['name']))
+                           dataset_id=uuid.UUID(str(v['name']))))
         return volumes
