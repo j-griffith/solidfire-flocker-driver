@@ -63,10 +63,10 @@ class SolidFireClient(object):
     def __init__(self, *args, **kwargs):
         self.endpoint_dict = kwargs.get('endpoint_dict')
         self.endpoint_version = kwargs.get('endpoint_version', '7.0')
-        self.raw = True
         self.request_history = []
 
-    def issue_request(self, method, params, endpoint=None):
+    @retry(retry_exc_tuple, tries=5)
+    def issue_request(self, method, params, version='1.0', endpoint=None):
         if params is None:
             params = {}
 

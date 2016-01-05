@@ -22,38 +22,73 @@ logger = Logger()
 def initialize_driver(cluster_id, **kwargs):
     """Initialize a new instance of the SolidFire driver.
 
-    :param cluster_id: The *Container* cluster_id (not SolidFire)
-    :param kwargs: SolidFire config settings from agents.yaml file
+    :param kwargs['endpoint', 'vag_name', 'account_name']
     :return: SolidFireBolockDeviceAPI object
     """
-    pass
+    endpoint = kwargs.get('endpoint', None)
+    return SolidFireBlockDeviceAPI(endpoint, cluster_id, **kwargs)
 
 
 @implementer(IBlockDeviceAPI)
 @implementer(IProfiledBlockDeviceAPI)
 class SolidFireBlockDeviceAPI(object):
     """ BlockDevice flocker implemenation using SolidFire."""
-    def __init__(self, endpoint, config, **kwargs):
+    def __init__(self, endpoint, cluster_id, **kwargs):
         """
-        :param mvip: The IP address of the SolidFire Management Virtual IP
-        :param login:
-        :param password:
+        :param endpoint
+            https://<login>:<password>@<mvip>:<port>/json-rpc/<version>
+        :param cluster_id
+
+        Optional kwargs:
+        : kwarg initiator_name
+        : kwarg svip
+        : kwarg profiles
         """
+
+        self.flocker_cluster_id = cluster_id
         self.initiator_iqns = []
-        self.endpoint = endpoint
-        self.client = sfapi.SoidFireAPI(endpoint)
-        self.vagname = kwargs.get('vag_name', None)
-        self.account_name = kwargs.get('account_name', None)
-        self.account_id = self._init_solidfire_account(self.account_name)
-        if not self.vagname:
-            raise Exception("vag_name not set in config file, unable "
+        self.vagname = cluster_id
+        self.account_name = cluster_id
+        if not endpoint:
+            raise Exception("Missing endpoint config parameters, unable "
                             "to initialize SolidFire Plugin.")
+        self.endpoint_dict = self._build_endpoint_dict(endpoint)
+        self.account_id = self._init_solidfire_account(self.account_name)
+        self.client = sfapi.SoidFireAPI(self.endpoint)
+
         if kwargs.get('initiator_name', None):
             self.initiator_iqns.append(kwargs.get('initiator_name'))
         else:
             self.initiator_iqns = self._set_initiator_iqns()
+
+        self.svip = kwargs.get('svip', None)
+        if not self.svip:
+            self.svip = self._get_svip()
+
         self.vag_id = self._initialize_vag(self.vagname, self.initiator_iqns)
         self.profiles = self._set_profiles(kwargs.get('profiles', None))
+
+    def _build_endpoint_dict(self, endpoint_string):
+        port = 443
+        keys = endpoint_string.split('/')
+        if len(keys) != 5:
+            raise Exception
+
+        mvip = keys[2].split('@')[1]
+        if ':' in mvip:
+            mvip = mvip.split(':')[0]
+            port = mvip.split(':')[1]
+        login = keys[2].split('@')[0].split(':')[0]
+        password = keys[2].split('@')[0].split(':')[1]
+        return {'mvip': mvip,
+                'login': login,
+                'password': password,
+                'port': port,
+                'url': 'https://%s:%s' % (mvip, port)}
+
+    def _self_get_svip(self):
+        cluster_info = self.client.issue_request('GetClusterInfo', {})
+        return cluster_info['clusterInfo']['svip'] + ':3260'
 
     def _intialize_vag(self, vag_name, iqns):
         # Get the vag and make sure this initiators iqn(s) are present
@@ -200,14 +235,14 @@ class SolidFireBlockDeviceAPI(object):
                                  'maxIOPS': profile['maxIOPS'],
                                  'burstIOPS': profile['burstIOPS']}
             result = self.client.issue_request('CreateVolume',
-                                               params,
-                                               self._endpoint)
+                                               params)
 
             params = {}
             params['volumeAccessGroupID'] = self.vag_id
             params['volumes'] = [int(result['volumeID'])]
             self.client.issue_request('AddVolumesToVolumeAccessGroup',
-                                      params)
+                                      params,
+                                      version='7.0')
             return BlockDeviceVolume(
                 blockdevice_id=unicode(result['volumeID']),
                 size=size,

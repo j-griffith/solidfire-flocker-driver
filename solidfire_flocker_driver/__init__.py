@@ -22,8 +22,8 @@ DRIVER_NAME = u"solidfire_flocker_driver"
 
 
 def api_factory(cluster_id, **kwargs):
-    kwargs['cluster_id'] = cluster_id
     return solidfire_driver.initialize_driver(
+        cluster_id,
         **kwargs)
 
 FLOCKER_BACKEND = node.BackendDescription(

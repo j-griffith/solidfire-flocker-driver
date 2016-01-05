@@ -11,22 +11,22 @@ Each of the following packages needs to be installed on EVERY Flocker Node
 
 - Open-iSCSI
   * Ubuntu<br>
-  ```bash
+  ```
   sudo apt-get install open-iscsi
   ```
 
   * Redhat variants<br>
-  ```bash
+  ```
   sud yum in stall iscsi-initiator-utils
   ```
 
 - SolidFire Flocker Plugin
-  ```bash
+  ```
   pip install solidfire-flocker-driver
   ```
    * or<br>
 
-   ```bash
+   ```
    git clone https://github.com/solidfire/solidfire-flocker-driver
    cd solidfire-flocker-driver
    sudo python ./setup.py install
@@ -36,18 +36,34 @@ After install, this plugin reads configuration information on each Flocker node
 via the /etc/flocker/agent.yml config file.  Note that you will want to use the
 same backend entries on each Flocker node.  Below is an example configuration:
 
-```bash
-control-service: {hostname: '192.168.33.10', port: 4524}
-dataset: {backend: solidfire_flocker_driver}
+```
 version: 1
+control-service:
+    hostname: "192.168.33.10"
 dataset:
-backend: solidfire_flocker_driver
-   endpoint: "https://admin:admin@192.168.160.3/json-rpc/7.0"
-   profiles: "{'Gold':{'minIOPS': 10000, 'maxIOPS': 15000, 'burstIOPS': 20000},
-               'Silver':{'minIOPS': 5000, 'maxIOPS': 10000, 'burstIOPS': 15000},
-               'Bronze':{'minIOPS': 1000, 'maxIOPS': 5000, 'burstIOPS': 10000}}"
-   vag_id: 55
-   svip: '10.10.0.4'
+    backend: "solidfire_flocker_driver"
+    endpoint: "https://admin:admin@192.168.160.3:443/json-rpc/7.0"
+    profiles: "{'Gold':{'minIOPS': 10000, 'maxIOPS': 15000, 'burstIOPS': 20000},
+                'Silver':{'minIOPS': 5000, 'maxIOPS': 10000, 'burstIOPS': 15000},
+                'Bronze':{'minIOPS': 1000, 'maxIOPS': 5000, 'burstIOPS': 10000}}"
+```
+
+There are also additional optional values that can be specified in case of
+using VLAN's for your SVIP, or explicitly providing initiator names:
+
+```
+version: 1
+control-service:
+    hostname: "192.168.33.10"
+dataset:
+    backend: "solidfire_flocker_driver"
+    endpoint: "https://admin:admin@192.168.160.3:443/json-rpc/7.0"
+    profiles: "{'Gold':{'minIOPS': 10000, 'maxIOPS': 15000, 'burstIOPS': 20000},
+                'Silver':{'minIOPS': 5000, 'maxIOPS': 10000, 'burstIOPS': 15000},
+                'Bronze':{'minIOPS': 1000, 'maxIOPS': 5000, 'burstIOPS': 10000}}"
+    initiator_name: "iqn.1993-08.org.debian:01:d7e03b6fc8fd"
+    svip: "10.10.10.10"
+
 ```
 
 Note the format of the endpoint is https://<login>:<password>@<mvip>/json-rpc/<element-version>
