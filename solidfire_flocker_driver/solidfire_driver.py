@@ -9,6 +9,7 @@ from eliot import Logger
 from eliot import Message
 from eliot import startTask
 from flocker.node.agents import blockdevice
+from twisted.python import filepath
 from zope.interface import implementer
 
 from flocker.node.agents.blockdevice import (
@@ -296,7 +297,8 @@ class SolidFireBlockDeviceAPI(object):
         if not vol:
             raise UnknownVolume(blockdevice_id)
         disk_by_path = utils.get_expected_disk_path(self.svip, vol['iqn'])
-        return utils.get_device_file_from_path(disk_by_path)
+        return filepath.FilePath(
+            utils.get_device_file_from_path(disk_by_path)).realpath()
 
     def attach_volume(self, blockdevice_id, attach_to):
         """ Attach ``blockdevice_id`` to ``host``.

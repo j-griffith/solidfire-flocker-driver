@@ -21,7 +21,7 @@ def get_device_file_from_path(disk_by_path):
     device = None
     if os.path.exists(disk_by_path):
         device = os.readlink(disk_by_path)
-    return device
+    return device.replace('../../', '/dev/')
 
 
 def iscsi_logout(tgt_ip, tgt_iqn):
