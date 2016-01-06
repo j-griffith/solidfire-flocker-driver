@@ -12,10 +12,15 @@ def path_exists(path, counter=1):
     return False
 
 
-def find_device_file(path):
+def get_expected_disk_path(ip, iqn):
+    return '/dev/disk/by-path/ip-%s-iscsi-%s-lun-0' % (ip,
+                                                       iqn)
+
+
+def get_device_file_from_path(disk_by_path):
     device = None
-    if os.path.exists(path):
-        device = os.readlink(path)
+    if os.path.exists(disk_by_path):
+        device = os.readlink(disk_by_path)
     return device
 
 
@@ -29,8 +34,7 @@ def iscsi_logout(tgt_ip, tgt_iqn):
 
 def iscsi_login(tgt_ip, tgt_iqn):
     attached_at = None
-    path = '/dev/disk/by-path/ip-%s-iscsi-%s-lun-0' % (tgt_ip,
-                                                       tgt_iqn),
+    path = get_expected_disk_path(tgt_ip, tgt_iqn)
     cmd = 'iscsiadm -m node -p %s -T %s --login' % (tgt_ip, tgt_iqn)
     subprocess.check_output(shlex.split(cmd))
     if path_exists(path, 5):

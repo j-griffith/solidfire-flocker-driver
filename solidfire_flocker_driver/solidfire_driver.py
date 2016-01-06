@@ -187,7 +187,7 @@ class SolidFireBlockDeviceAPI(object):
                                             version='7.0')['volumes']
         vol = None
         for v in volumes:
-            if v['volumeID'] == solidfire_id:
+            if int(v['volumeID']) == int(solidfire_id):
                 vol = v
                 break
         return vol
@@ -295,6 +295,8 @@ class SolidFireBlockDeviceAPI(object):
         vol = self._get_solidfire_volume(blockdevice_id)
         if not vol:
             raise UnknownVolume(blockdevice_id)
+        disk_by_path = utils.get_expected_disk_path(self.svip, vol['iqn'])
+        return utils.get_device_file_from_path(disk_by_path)
 
     def attach_volume(self, blockdevice_id, attach_to):
         """ Attach ``blockdevice_id`` to ``host``.
@@ -324,7 +326,7 @@ class SolidFireBlockDeviceAPI(object):
         # It's not attached here, make sure it's not attached somewhere else
         # In the future we can add multi-attach support maybe, but for now
         # avoid the trouble of file-systems etc
-        current_sessions = self._current_iscsi_sessions(self, blockdevice_id)
+        current_sessions = self._current_iscsi_sessions(blockdevice_id)
         if current_sessions:
             raise AlreadyAttachedVolume(blockdevice_id)
 
@@ -403,9 +405,12 @@ class SolidFireBlockDeviceAPI(object):
             if utils.path_exists('/dev/disk/by-path/ip-%s-iscsi-%s-lun-0' %
                                  (self.svip, tgt_iqn), 1):
                 attached_to = self.compute_instance_id()
+            name = v['name']
+            if 'flock-' in v['name']:
+                name = name.replace('flock-', '')
             volumes.append(BlockDeviceVolume(
                            blockdevice_id=unicode(v['volumeID']),
                            size=v['totalSize'],
                            attached_to=attached_to,
-                           dataset_id=uuid.UUID(str(v['name']))))
+                           dataset_id=uuid.UUID(str(name))))
         return volumes
